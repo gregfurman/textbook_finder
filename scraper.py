@@ -1,3 +1,9 @@
+import requests
+import asyncio
+import aiohttp
+import time
+import re
+import difflib
 
 from urllib.parse import urlencode, urlunparse,urlparse,parse_qs
 from urllib.request import urlopen,Request
@@ -6,21 +12,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
-import requests
-import asyncio
-import aiohttp
-import time
-
 from itertools import chain
-
 from collections import Counter
-import re
-
-import difflib
 
 class Scraper(object):
-
-
 
     def __init__(self,language,pages):
         self.headers = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0", 
@@ -47,13 +42,12 @@ class Scraper(object):
 
             scraped_headings = await asyncio.gather(*tasks)
 
-            scraped_headings = filter(lambda x: len(x) > 2,scraped_headings)
+            scraped_headings = filter(lambda x: len(x) > 1,scraped_headings)
             for scraped_heading in chain.from_iterable(scraped_headings):
-                
-                
 
                 if (heading_match:=difflib.get_close_matches(scraped_heading,self.titles,n=3,cutoff=0.9)):
                     for h in heading_match:
+
                         self.titles[h] += 1
                 else:
                     continue
@@ -75,17 +69,17 @@ class Scraper(object):
     async def search_page(self,text):
         soup = BeautifulSoup(text,'html.parser')
         headings = soup.find_all(["h1", "h2", "h3"])
-        res = []
+        res = set()
 
         if headings:
             for ele in headings:
                 
-                if (match := re.match(r"^(?:#?(?:[a-z]|\d+)(?:\)|\.))?(.*)$",ele.text.strip().lower())):
-                    res.append(match.group(0))
+                if ele and (match := re.match(r"^(?:#?(?:[a-z]|\d+)(?:\)|\.))?(.*)$",ele.text.strip().lower())):
+                    res.add(match.group(1).strip())
                 else:
-                    res.append(ele.text.strip().lower())
+                    res.add(ele.text.strip().lower())
 
-        return res
+        return list(res)
 
         # except Exception as e:
         #     print(e)
@@ -94,35 +88,26 @@ class Scraper(object):
     
     def get_search_data(self,pages=5,query="best python textbooks"):
         urls = set()
-        # try:
-        options = webdriver.chrome.options.Options()
-        # options.add_argument("--headless")
-        options.add_argument("--disable-extensions")
-        options.add_argument("disable-gpu")
-        options.add_argument('window-size=1920x1080')
-        driver = webdriver.Chrome(executable_path="C:\\bin\chromedriver.exe",options=options)
+        next_page = "/search?"+ urlencode({"q":query})
+        base_url = "https://www.google.com"
 
-        url = urlunparse(("https", "www.duckduckgo.com", "/html", "", urlencode({"q":query}) , ""),)
-        # print(pages,query,url)
-
-        driver.get(url)
-        
         for _ in range(pages+1):
             
-            for elem in driver.find_elements_by_xpath("//a[@class='result__a']"):
-                if (href:=elem.get_attribute("href")):
-                    urls.add(href)
+            req = requests.get( base_url + next_page ,headers=self.headers)
+            soup = BeautifulSoup(req.text,'html.parser')
+            results = soup.select("a > h3")
 
-            try:
-                if (next_button:=WebDriverWait(driver,20).until(EC.element_to_be_clickable((By.XPATH,"//input[@class='btn btn--alt']")))):
-                    next_button.click()
+            for elem in results:
+                urls.add(elem.parent.attrs["href"])
 
-            except:
-                return urls
+                if (next_button := soup.find('a',attrs={'id':'pnnext'})):
+                    next_page = next_button["href"]
+                else:
+                    print("Could not find 'Next' button.")
+                    return urls
 
 
         return urls
-
 
     def get_amazon_data(self,pages=1,language="python"):
 
@@ -154,7 +139,7 @@ class Scraper(object):
         # print(self.titles)
 
 
-s = Scraper("java",10)
+s = Scraper("java",1)
 
 s.titles += Counter()
 print("\n")
