@@ -7,10 +7,6 @@ import difflib
 
 from urllib.parse import urlencode, urlunparse,urlparse,parse_qs
 from urllib.request import urlopen,Request
-from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from itertools import chain, dropwhile
 from collections import Counter
@@ -63,8 +59,6 @@ class Trie(object):
 
 class Scraper(object):
 
-    # import Trie
-
     def __init__(self,language,pages):
         self.headers = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0", 
         "Accept-Encoding":"gzip, deflate", 
@@ -83,25 +77,19 @@ class Scraper(object):
 
         loop = asyncio.get_event_loop()
         response = loop.run_until_complete(self.scrape_urls())
-        
-        t0 = time.perf_counter()
 
-        c=self.count_instances(response)
-        t1 = time.perf_counter()
-        print("TIME PASSED: ",(t1-t0))
-        return c + Counter()
+        return self.count_instances(response) + Counter()
 
     def count_instances(self,scraped_headings):
         scraped_headings = filter(lambda x: len(x) > 1,scraped_headings)
         counter = Counter()
 
         for scraped_heading in chain.from_iterable(scraped_headings):
-            # print(scraped_heading)
             ratio,index = self.trie.ratio(scraped_heading)
+
             if ratio > 0.8:
-                counter.update({self.titles[index] : 1}) #print(scraped_heading,"|",)
-            # if (heading_match:=difflib.get_close_matches(scraped_heading,self.titles,n=1,cutoff=0.9)):
-                # self.titles[heading_match[0]] +=1
+                counter.update({self.titles[index] : 1})
+
             else:
                 continue
         return counter
@@ -171,47 +159,40 @@ class Scraper(object):
                     print("Could not find 'Next' button.")
 
 
+    def _clean_response_text(self,response):
+        return response.getText().lower().strip()
+
     def get_amazon_data(self,pages=1,language="python"):
 
-        next_page = f"s?k={language.lower().strip()}&rh=n%3A3839&ref=nb_sb_noss"#"https://www.amazon.com/Programming-Computers-Internet-Books/b?ie=UTF8&node=3839"
+        next_page = f"s?k={language.lower().strip()}&rh=n%3A3839&ref=nb_sb_noss" #"https://www.amazon.com/Programming-Computers-Internet-Books/b?ie=UTF8&node=3839"
         base_url = "https://www.amazon.com/"
 
+
+
         for page in range(pages+1):
+
+
             req = requests.get( base_url + next_page ,headers=self.headers)
             content = req.text
             soup = BeautifulSoup(content,features="html.parser")
             
-            for result in soup.find_all('a',attrs={'class':'a-link-normal a-text-normal'}):#('div',attrs={'class':'a-section a-spacing-none a-spacing-top-small'}):
-                # if (title_html := result.find('a',attrs={'class':'a-link-normal a-text-normal'}))
-                # if (title_html:=result.find('span',attrs={'class':'a-size-base-plus a-color-base a-text-normal'})): #and (authors_html:=result.find('div',attrs={'class':'a-row a-size-base a-color-secondary'})):
-                # title = result.getText().lower().strip()
-                # self.titles[title] = 0
-                self.trie.insert(result.getText().lower().strip(),len(self.titles))
-                self.titles.append(result.getText().lower().strip())
+            for result in soup.find_all('a',attrs={'class':'a-link-normal a-text-normal'}):
 
-                # authors = authors_html.getText() 
-                # print(title,authors.replace("\n"," "))
+                self.trie.insert(result.getText().lower().strip(),len(self.titles))
+                self.titles.append(self._clean_response_text(result))
+
+
             if (soup_find :=soup.find('li',attrs={'class':'a-last'})) != None:
                 next_page = soup_find.find('a')['href']
             else:
                 print("Error in finding Amazon details.")
                 break
-
-        # print(self.titles)
-
+                
 
 
+if __name__ == "__main__":
+    s = Scraper(language="python",pages=1)
 
-s = Scraper("python",10)
-# t0 = time.time()
-
-
-
-# t1 = time.time()
-
-# print("TIME PASSED: ",t1-t0)
-
-
-for key,count in s.main().most_common():
-    print(f"{key}: {count}")
+    for key,count in s.main().most_common(10):
+        print(f"{key}: {count}")
 
